@@ -1,3 +1,8 @@
+/*
+Saurav Chhapawala
+
+*/
+
 #include "shipment.h"
 #include <sys/types.h>
 #include <sys/ipc.h>
@@ -14,7 +19,6 @@
 #include <sys/wait.h>
 using namespace std;
 
-int findOpenOrderIndex(int* shmBUF);
 /*
 merchandise
 0 - Customer ID
@@ -39,37 +43,42 @@ void printMerch(int a[]) {
     cout << merch[4] << " tennis accessories" << endl;
 }
 
-void addToMerch() {
-    merch[0] += rand() % 20;
-    merch[1] += rand() % 20;
-    merch[2] += rand() % 20;
-    merch[3] += rand() % 20;
-    merch[4] += rand() % 20;
-    /*
-    cout << a[0] <<  endl;
-    cout << a[1] <<  endl;
-    cout << a[2] <<  endl;
-    cout << a[3] <<  endl;
-    cout << a[4] <<  endl;
-    */
+//index will have elements that correspond to the customer id and order elements
+int findOpenOrderIndex(int* shmBUF) {
+    //todo
 }
 
-void placeOrder(int a, int b, int c, int d, int e) {
-    merch[0] -= a;
-    merch[1] -= b;
-    merch[2] -= c;
-    merch[3] -= d;
-    merch[4] -= e;
+int findMinIndex(int customerID) {
+    //todo
+}
+
+int findMaxIndex(int customerID) {
+    //todo
 }
 
 void fufilOrder(SEMAPHORE &sem, int* shmBUF) {
     for (int i = 0; i < 10 * MAX_ORDERS; i++){
+        //Wait for an order
         sem.P(PUT_ITEM);
 
+        //Index to get 
+        //see which order is ready to go
         int minIndex = findOpenOrderIndex(shmBUF);
+        //Look through to see if we already have this order
         int customerID = *(shmBUF + minIndex);
+        //Went through, reset to 0
+        //resets customer id to 0 so order is good
         *(shmBUF + minIndex) = 0;
         merch[0] = 0;
+        /*
+        0 - Customer ID
+        1 - overgrips
+        2 - racket strings
+        3 - tennis shoes
+        4 - tennis balls
+        5 - tennis accessories
+        */
+       //make the purchase and decrement inventory
         if (*(shmBUF + minIndex + 1) == 1) {
             *(shmBUF + 1) -= 1;
             merch[1] -= 1;
@@ -91,6 +100,7 @@ void fufilOrder(SEMAPHORE &sem, int* shmBUF) {
             merch[5] -= 1;
         }
 
+        //Print what the customer ordered
         cout << "ORDER" << endl;
         cout << "Customer ID: " << customerID << endl;
         cout << "Over Grips: " << *(shmBUF + minIndex + 1) << endl;
@@ -104,18 +114,25 @@ void fufilOrder(SEMAPHORE &sem, int* shmBUF) {
 }
 
 void customerProcess(SEMAPHORE &sem, int* shmBUF, int customerID) {
-    //int min = findMinIndex(customerID);
-    //int max = findMaxIndex(customerID);
+    //Get the index
+    int min = findMinIndex(customerID);
+    int max = findMaxIndex(customerID);
 
+    //Customers order, follows same numbering scheme
     int orderData[6];
     orderData[0] = customerID;
+
+    //Every order has a grip
     orderData[1] = 1;
 
     for (int i = 0; i < MAX_ORDERS; i++) {
+        //randomly generate order
         for (int i = 2; i < 6; i++) {
             orderData[i] = rand() % 2;
         }
 
+        //If we recieved an order for it wait and get it
+        //this is always one
         sem.P(GRIPS);
 
         if (orderData[2] == 1)
@@ -127,18 +144,28 @@ void customerProcess(SEMAPHORE &sem, int* shmBUF, int customerID) {
         if (orderData[5] == 1)
             sem.P(ACCESSORIES);
     }
+    sem.V(GRIPS);
+    sem.V(STRINGS);
+    sem.V(SHOES);
+    sem.V(BALLS);
+    sem.V(ACCESSORIES);
 }
 
 void supplyProcess(SEMAPHORE &sem, int* shmBUF) {
     sem.P(PUT_ITEM);
 
+    //Get the items from provided method
     int* itemsGotten = shipment_arrival(merch);
 
+    //get index
     int minIndex = findOpenOrderIndex(shmBUF);
+    //customer id is first in scheme
     int customerID = *(shmBUF + minIndex);
-    *(shmBUF + minIndex) = 0;
+    //set to 11 so we know it is restocker
+    *(shmBUF + minIndex) = 11;
     merch[0] = customerID;
 
+    //Add items gotten into inventory
     *(shmBUF + 1) += itemsGotten[0];
     merch[1] += itemsGotten[0];
     *(shmBUF + 2) += itemsGotten[1];
@@ -153,18 +180,6 @@ void supplyProcess(SEMAPHORE &sem, int* shmBUF) {
     sem.V(TAKE_ITEM);
 }
 
-int findOpenOrderIndex(int* shmBUF) {
-    //shmBUF
-}
-
-int findMinIndex(int customerID) {
-
-}
-
-int findMaxIndex(int customerID) {
-    
-}
-
 int main() {
     //initialize random seed
     srand (time(NULL));
@@ -174,39 +189,36 @@ int main() {
 	SEMAPHORE sem(2);
 
     merch  = new int[6];
-
-    printMerch(merch);
-    //addToMerch();
-    //shipment_arrival(merch);
     printMerch(merch);
     
     int customerID = 1;
-    int maxChildren = 11;
+    
     //spawn child
+    //set to 1 to start it off
     childPID = 1;
     if (childPID > 0) { //parent
-        for (int i = 0; i < maxChildren; i++) {
+        for (int i = 0; i < 11; i++) {
             customerID++;
             childPID = fork();
+            //create 11 children
             if (childPID == 0 && customerID == 11) { //child
-                //Resupply
+                //11th process, Resupply
                 cout << "Supplier added more to inventory" << endl;
                 supplyProcess(sem, shmBUF);
                 break;
             }
             else if (childPID == 0) { //child
                 //Customer
-                cout << "Made customer" << endl;
+                cout << "Made customer and sent order" << endl;
                 customerProcess(sem, shmBUF, customerID);
                 break;
             }
             else {
                 cout << "fork() error" << endl;
             }
+            printMerch(merch);
         }
-
         fufilOrder(sem, shmBUF);
+        cout << "Fufiled order" << endl;
     }
-
-    
 }
